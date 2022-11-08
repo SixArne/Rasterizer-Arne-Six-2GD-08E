@@ -30,6 +30,12 @@ namespace dae
 
 		void Update(Timer* pTimer);
 		void Render();
+		void Render_W1_Part1();
+		void Render_W1_Part2();
+		void Render_W1_Part3();
+		void Render_W1_Part4();
+		void Render_W1_Part5();
+
 
 		bool SaveBufferToImage() const;
 
@@ -49,7 +55,8 @@ namespace dae
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
 		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const; //W1 Version
-		const std::vector<Vector2> BufferToScreenSpace(const std::vector<Vector3>& triangles);
-		bool DoesCover(const std::vector<Vector2>& screenTriangleCoordinates, uint32_t pixelX, uint32_t pixelY);
+		const std::vector<Vector2> BufferToScreenSpace(const std::vector<Vertex>& triangles);
+		bool IsInTriangle(const std::vector<Vertex>& screenTriangleCoordinates, uint32_t pixelX, uint32_t pixelY);
+		bool IsInTriangle(const std::vector<Vector3>& screenTriangleCoordinates, uint32_t pixelX, uint32_t pixelY);
 	};
 }
