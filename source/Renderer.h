@@ -49,5 +49,7 @@ namespace dae
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
 		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const; //W1 Version
+		const std::vector<Vector2> BufferToScreenSpace(const std::vector<Vector3>& triangles);
+		bool DoesCover(const std::vector<Vector2>& screenTriangleCoordinates, uint32_t pixelX, uint32_t pixelY);
 	};
 }

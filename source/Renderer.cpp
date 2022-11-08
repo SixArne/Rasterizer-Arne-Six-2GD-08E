@@ -2,6 +2,9 @@
 #include "SDL.h"
 #include "SDL_surface.h"
 
+// Std includes
+#include <iostream>
+
 //Project includes
 #include "Renderer.h"
 #include "Math.h"
@@ -44,16 +47,30 @@ void Renderer::Render()
 	//Lock BackBuffer
 	SDL_LockSurface(m_pBackBuffer);
 
+	// Define triangle [NDC] space
+	const std::vector<Vector3> vertices_ndc
+	{
+		{0.f, .5f, 1.f},
+		{.5f, -.5f, 1.f},
+		{-.5f, -.5f, 1.f}
+	};
+
+
 	//RENDER LOGIC
 	for (int px{}; px < m_Width; ++px)
 	{
 		for (int py{}; py < m_Height; ++py)
 		{
-			float gradient = px / static_cast<float>(m_Width);
+			/*float gradient = px / static_cast<float>(m_Width);
 			gradient += py / static_cast<float>(m_Width);
-			gradient /= 2.0f;
+			gradient /= 2.0f;*/
 
-			ColorRGB finalColor{ gradient, gradient, gradient };
+			ColorRGB finalColor{ 0,0,0 };
+
+			const std::vector<Vector2> screenSpaceCoordinates = BufferToScreenSpace(vertices_ndc);
+
+			if (DoesCover(screenSpaceCoordinates, px, py))
+				finalColor = { 1,1,1 };
 
 			//Update Color in Buffer
 			finalColor.MaxToOne();
@@ -80,4 +97,56 @@ void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_
 bool Renderer::SaveBufferToImage() const
 {
 	return SDL_SaveBMP(m_pBackBuffer, "Rasterizer_ColorBuffer.bmp");
+}
+
+const std::vector<Vector2> Renderer::BufferToScreenSpace(const std::vector<Vector3>& triangles)
+{
+	std::vector<Vector2> screenSpaceCoordinates{};
+	screenSpaceCoordinates.reserve(3);
+
+	for (const Vector3 triangle : triangles)
+	{
+		Vector2 screenSpacePixel{};
+
+		screenSpacePixel.x = ((triangle.x + 1) * (float)m_Width) / 2.f;
+		screenSpacePixel.y = ((1 - triangle.y) * (float)m_Height) / 2.f;
+		
+		screenSpaceCoordinates.emplace_back(screenSpacePixel);
+	}
+
+	return screenSpaceCoordinates;
+}
+
+inline bool EdgeFunction(const Vector2& a, const Vector2& b, const Vector2& c)
+{
+	return ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x) >= 0);
+}
+
+#define USE_EDGE
+//#define CROSS
+
+bool Renderer::DoesCover(const std::vector<Vector2>& screenTriangleCoordinates, uint32_t pixelX, uint32_t pixelY)
+{
+#ifdef USE_EDGE
+	Vector2 p{ (float)pixelX, (float)pixelY };
+
+	auto V0 = screenTriangleCoordinates[0];
+	auto V1 = screenTriangleCoordinates[1];
+	auto V2 = screenTriangleCoordinates[2];
+
+	bool inside = true;
+
+	inside &= EdgeFunction(V0, V1, p);
+	inside &= EdgeFunction(V1, V2, p);
+	inside &= EdgeFunction(V2, V0, p);
+
+
+	if (inside == true)
+	{
+		std::cout << "I'm inside yey" << "\n";
+	}
+	return inside;
+#endif
+#ifdef CROSS
+#endif
 }
