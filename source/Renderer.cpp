@@ -4,6 +4,7 @@
 
 // Std includes
 #include <iostream>
+#include <algorithm>
 
 //Project includes
 #include "Renderer.h"
@@ -47,7 +48,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 
 Renderer::~Renderer()
 {
-	//delete[] m_pDepthBufferPixels;
+	delete[] m_pDepthBufferPixels;
 }
 
 void Renderer::Update(Timer* pTimer)
@@ -64,8 +65,9 @@ void Renderer::Render()
 	//Render_W1_Part1();
 	//Render_W1_Part2();
 	//Render_W1_Part3();
-	Render_W1_Part4();
-	//Render_W1_Part5();
+	//Render_W1_Part4();
+	Render_W1_Part5();
+	//Render_Test();
 
 	//@END
 	//Update SDL Surface
@@ -287,8 +289,137 @@ void Renderer::Render_W1_Part4()
 
 void Renderer::Render_W1_Part5()
 {
+	// World coordinates
+	const std::vector<Vertex> vertices_world
+	{
+		// Triangle 0
+		{{0.f, 2.f, 0.f}, {1,0,0}},
+		{{1.5f, -1.f, .0f}, {1,0,0}},
+		{{-1.5f, -1.f, .0f}, {1,0,0}},
+
+		// Triangle 1
+		{{0.f, 4.f, 2.f}, {1,0,0}},
+		{{3.f, -2.f, 2.f}, {0,1,0}},
+		{{-3.f, -2.f, 2.f}, {0,0,1}},
+	};
+
+	// Buffer for raster
+	std::vector<Vertex> vertices_raster{};
+	vertices_raster.reserve(vertices_world.size());
+
+	// Transform from World -> View -> Projected -> Raster
+	VertexTransformationFunction(vertices_world, vertices_raster);
+
+	// Make float array size of image that will act as depth buffer
+	std::fill_n(m_pDepthBufferPixels, m_Width * m_Height, FLT_MAX);
+
 	// Clear back buffer
 	SDL_FillRect(m_pBackBuffer, &m_pBackBuffer->clip_rect, SDL_MapRGB(m_pBackBuffer->format, 100, 100, 100));
+
+	for (int vertexIndex{}; vertexIndex < vertices_raster.size(); vertexIndex += 3)
+	{
+		std::vector<Vertex> triangle{
+			vertices_raster[vertexIndex],
+			vertices_raster[vertexIndex + 1],
+			vertices_raster[vertexIndex + 2]
+		};
+
+		const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
+		const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
+		const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
+
+		// create and clamp bounding box top left
+		const int topLeftX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
+		const int topLeftY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
+		const std::pair<uint32_t, uint32_t> topLeft = std::make_pair<uint32_t, uint32_t>(
+			static_cast<uint32_t>(std::clamp(topLeftX, 0, m_Width - 1)),
+			static_cast<uint32_t>(std::clamp(topLeftY, 0, m_Height - 1))
+		);
+
+		// create and clamp bounding box bottom right
+		const int rightBottomX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
+		const int rightBottomY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
+		const std::pair<uint32_t, uint32_t> rightBottom = std::make_pair<uint32_t, uint32_t>(
+			static_cast<uint32_t>(std::clamp(rightBottomX, 0, m_Width - 1)),
+			static_cast<uint32_t>(std::clamp(rightBottomY, 0, m_Height - 1))
+		);
+
+
+		for (uint32_t px{topLeft.first}; px < rightBottom.first; ++px)
+		{
+			for (uint32_t py{topLeft.second}; py < rightBottom.second; ++py)
+			{
+				Vector2 point{ (float)px, (float)py };
+
+				// Barycentric coordinates
+				const float w0 = EdgeFunction(vertex1, vertex2, point);
+				const float w1 = EdgeFunction(vertex2, vertex0, point);
+				const float w2 = EdgeFunction(vertex0, vertex1, point);
+				const float area = w0 + w1 + w2;
+
+				// In triangle
+				const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
+
+				if (isInTriangle)
+				{
+					// Get relative Z components of triangle vertices
+					float vertex0z = triangle[0].position.z;
+					float vertex1z = triangle[1].position.z;
+					float vertex2z = triangle[2].position.z;
+
+					// Get the hit point Z with the barycentric weights
+
+					// Get the relative z
+					const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
+
+					const int pixelZIndex = py * m_Width + px;
+
+					// If new z value of pixel is lower than stored:
+					if (z < m_pDepthBufferPixels[pixelZIndex])
+					{
+						m_pDepthBufferPixels[pixelZIndex] = z;
+						ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
+
+						//Update Color in Buffer
+						finalColor.MaxToOne();
+
+						m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+							static_cast<uint8_t>(finalColor.r * 255),
+							static_cast<uint8_t>(finalColor.g * 255),
+							static_cast<uint8_t>(finalColor.b * 255));
+					}
+				}
+			}
+		}
+	}
+}
+
+void Renderer::Render_Test()
+{
+	for (uint32_t x{}; x < m_Width; x++)
+	{
+		for (uint32_t y{}; y < m_Height; y++)
+		{
+			ColorRGB finalColor = { 1,1,1 };
+
+			//Update Color in Buffer
+			finalColor.MaxToOne();
+
+			if (x >= m_Width - 20 && y >= m_Height - 20)
+			{
+				m_pBackBufferPixels[x + (y * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+					static_cast<uint8_t>(finalColor.r * 255),
+					static_cast<uint8_t>(finalColor.g * 255),
+					static_cast<uint8_t>(finalColor.b * 255));
+			}
+
+			
+
+		}
+	}
+
+
+	
 }
 
 void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const

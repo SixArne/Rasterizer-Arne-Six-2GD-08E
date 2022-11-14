@@ -35,6 +35,7 @@ namespace dae
 		void Render_W1_Part3();
 		void Render_W1_Part4();
 		void Render_W1_Part5();
+		void Render_Test();
 
 
 		bool SaveBufferToImage() const;
