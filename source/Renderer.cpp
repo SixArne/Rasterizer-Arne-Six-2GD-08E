@@ -16,7 +16,11 @@ using namespace dae;
 
 inline float EdgeFunction(const Vector2& a, const Vector2& b, const Vector2& c)
 {
-	return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+	// TODO: look into this math later
+
+	// point to side => c - a
+	// side to end => b - a
+	return Vector2::Cross(b - a, c - a);
 }
 
 inline float EdgeFunction(const Vector3& a, const Vector3& b, const Vector3& c)
@@ -35,7 +39,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
-	//m_pDepthBufferPixels = new float[m_Width * m_Height];
+	m_pDepthBufferPixels = new float[m_Width * m_Height];
 
 	//Initialize Camera
 	m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
@@ -215,50 +219,57 @@ void Renderer::Render_W1_Part4()
 	VertexTransformationFunction(vertices_world, vertices_raster);
 
 	// Make float array size of image that will act as depth buffer
-	std::vector<float> depthBuffer = std::vector<float>(m_Width * m_Height);
-	std::fill_n(depthBuffer.begin(), depthBuffer.size(), FLT_MAX);
+	std::fill_n(m_pDepthBufferPixels, m_Width * m_Height, FLT_MAX);
 
 	// Clear back buffer
 	SDL_FillRect(m_pBackBuffer, &m_pBackBuffer->clip_rect, SDL_MapRGB(m_pBackBuffer->format, 100,100,100));
 
 	for (int vertexIndex{}; vertexIndex < vertices_raster.size(); vertexIndex += 3)
 	{
-		std::vector<Vertex> triangle{vertices_raster[vertexIndex], vertices_raster[vertexIndex + 1], vertices_raster[vertexIndex + 2] };
+		std::vector<Vertex> triangle{
+			vertices_raster[vertexIndex], 
+			vertices_raster[vertexIndex + 1], 
+			vertices_raster[vertexIndex + 2] 
+		};
+
+		const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
+		const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
+		const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
 
 		for (int px{}; px < m_Width; ++px)
 		{
 			for (int py{}; py < m_Height; ++py)
 			{
-				ColorRGB finalColor{ 0,0,0 };
+				Vector2 point{ (float)px, (float)py };
 
-				Vector3 point{ (float)px, (float)py, 0.f };
+				// Barycentric coordinates
+				const float w0 = EdgeFunction(vertex1, vertex2, point);
+				const float w1 = EdgeFunction(vertex2, vertex0, point);
+				const float w2 = EdgeFunction(vertex0, vertex1, point);
+				const float area = w0 + w1 + w2;
 
-				if (IsInTriangle(triangle, px, py))
+				// In triangle
+				const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
+
+				if (isInTriangle)
 				{
-					// Barycentric coordinates
-					const float area = EdgeFunction(triangle[0].position, triangle[1].position, triangle[2].position);
-					const float w0 = EdgeFunction(triangle[1].position, triangle[2].position, point);
-					const float w1 = EdgeFunction(triangle[2].position, triangle[0].position, point);
-					const float w2 = EdgeFunction(triangle[0].position, triangle[1].position, point);
-
 					// Get relative Z components of triangle vertices
-					float v0z{}, v1z{}, v2z{};
-					v0z = 1.f / triangle[0].position.z;
-					v1z = 1.f / triangle[1].position.z;
-					v2z = 1.f / triangle[2].position.z;
+					float vertex0z = triangle[0].position.z;
+					float vertex1z = triangle[1].position.z;
+					float vertex2z = triangle[2].position.z;
 
 					// Get the hit point Z with the barycentric weights
-					const float oneOverZ = v0z * w0 + v1z * w1 + v2z * w2;
 
 					// Get the relative z
-					const float z = 1.f / oneOverZ;
+					const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
+
 					const int pixelZIndex = py * m_Width + px;
 
 					// If new z value of pixel is lower than stored:
-					if (z < depthBuffer[pixelZIndex])
+					if (z < m_pDepthBufferPixels[pixelZIndex])
 					{
-						depthBuffer[pixelZIndex] = z;
-						finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
+						m_pDepthBufferPixels[pixelZIndex] = z;
+						ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
 
 						//Update Color in Buffer
 						finalColor.MaxToOne();
