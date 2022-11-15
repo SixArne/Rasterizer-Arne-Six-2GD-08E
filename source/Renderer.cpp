@@ -12,7 +12,7 @@
 #include "Matrix.h"
 #include "Texture.h"
 #include "Utils.h"
-#include <assert.h>
+#include <ppl.h>
 
 using namespace dae;
 
@@ -243,14 +243,24 @@ void dae::Renderer::Render_W2_P1()
 		{
 			const uint32_t amountOfTriangles = ((uint32_t)mesh.indices.size()) / 3;
 
-			for (uint32_t index{}; index < amountOfTriangles; index++)
+			/*for (uint32_t index{}; index < amountOfTriangles; index++)
 			{
 				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[3 * index]];
 				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[3 * index + 1]];
 				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[3 * index + 2]];
 
 				RenderTriangle(vertex1, vertex2, vertex3);
-			}
+			}*/
+
+			// fps go BRRRRRRRRRRRRRRR
+			concurrency::parallel_for(0u, amountOfTriangles, [=, this](int index)
+			{
+				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[3 * index]];
+				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[3 * index + 1]];
+				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[3 * index + 2]];
+
+				RenderTriangle(vertex1, vertex2, vertex3);
+			});
 		}
 		else if (mesh.primitiveTopology == PrimitiveTopology::TriangleStrip)
 		{
@@ -380,14 +390,14 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 			if (isInTriangle)
 			{
 				// Get relative Z components of triangle vertices
-				float vertex0z = triangle[0].position.z;
-				float vertex1z = triangle[1].position.z;
-				float vertex2z = triangle[2].position.z;
+				float v0z = triangle[0].position.z;
+				float v1z = triangle[1].position.z;
+				float v2z = triangle[2].position.z;
 
 				// Get the hit point Z with the barycentric weights
 
 				// Get the relative z
-				const float z = 1 / ( (1 / vertex0z * w0) + ( 1 / vertex1z * w1) +  (1 / vertex2z * w2));
+				const float z = 1 / ( (1 / v0z * w0) + ( 1 / v1z * w1) +  (1 / v2z * w2));
 
 				const int pixelZIndex = py * m_Width + px;
 
@@ -395,7 +405,10 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				if (z < m_pDepthBufferPixels[pixelZIndex])
 				{
 					m_pDepthBufferPixels[pixelZIndex] = z;
-					Vector2 interpolatedUvCoordinates = (v1.uv * (w0 / vertex0z) + v2.uv * (w1 /  vertex1z) + v3.uv * (w2 / vertex2z)) * z;
+					Vector2 interpolatedUvCoordinates = (v1.uv * (w0 / v0z) + v2.uv * (w1 /  v1z) + v3.uv * (w2 / v2z)) * z;
+					interpolatedUvCoordinates.x = std::clamp(interpolatedUvCoordinates.x, 0.f, 1.f);
+					interpolatedUvCoordinates.y = std::clamp(interpolatedUvCoordinates.y, 0.f, 1.f);
+
 					ColorRGB finalColor = m_pTextureBuffer->Sample(interpolatedUvCoordinates);
 
 					//Update Color in Buffer
