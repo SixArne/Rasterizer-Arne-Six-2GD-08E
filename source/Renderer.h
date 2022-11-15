@@ -32,7 +32,6 @@ namespace dae
 		void Render();
 		void Render_W1();
 		void Render_W2_P1();
-		void Render_Test();
 
 
 		bool SaveBufferToImage() const;
@@ -42,6 +41,9 @@ namespace dae
 
 		SDL_Surface* m_pFrontBuffer{ nullptr };
 		SDL_Surface* m_pBackBuffer{ nullptr };
+		Texture* m_pTextureBuffer{ nullptr };
+
+		uint32_t* m_pSurfacePixels{};
 		uint32_t* m_pBackBufferPixels{};
 
 		float* m_pDepthBufferPixels{};

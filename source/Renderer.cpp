@@ -34,6 +34,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/uv_grid_2.png");
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
@@ -45,6 +46,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 Renderer::~Renderer()
 {
 	delete[] m_pDepthBufferPixels;
+	delete m_pTextureBuffer;
 }
 
 void Renderer::Update(Timer* pTimer)
@@ -178,20 +180,20 @@ void Renderer::Render_W1()
 
 void dae::Renderer::Render_W2_P1()
 {
-	/*std::vector<Mesh> meshes
+	std::vector<Mesh> meshes
 	{
 		Mesh
 		{
 			{
-				Vertex{{ -3,3,-2}},
-				Vertex{{ 0,3,-2}},
-				Vertex{{ 3,3,-2}},
-				Vertex{{ -3,0,-2}},
-				Vertex{{ 0,0,-2}},
-				Vertex{{ 3,0,-2}},
-				Vertex{{ -3,-3,-2}},
-				Vertex{{ 0,-3,-2}},
-				Vertex{{ 3,-3,-2}},
+				Vertex{{ -3, 3,-2},{},{ 0, 0}},
+				Vertex{{  0, 3,-2},{},{.5, 0}},
+				Vertex{{  3, 3,-2},{},{ 1, 0}},
+				Vertex{{ -3, 0,-2},{},{ 0,.5}},
+				Vertex{{  0, 0,-2},{},{.5,.5}},
+				Vertex{{  3, 0,-2},{},{ 1,.5}},
+				Vertex{{ -3,-3,-2},{},{ 0, 1}},
+				Vertex{{  0,-3,-2},{},{.5, 1}},
+				Vertex{{  3,-3,-2},{},{ 1, 1}},
 			},
 			{
 				3,0,1,   1,4,3,   4,1,2,
@@ -200,9 +202,9 @@ void dae::Renderer::Render_W2_P1()
 			},
 			PrimitiveTopology::TriangeList,
 		}
-	};*/
+	};
 
-	std::vector<Mesh> meshes
+	/*std::vector<Mesh> meshes
 	{
 		Mesh
 		{
@@ -224,7 +226,7 @@ void dae::Renderer::Render_W2_P1()
 			},
 			PrimitiveTopology::TriangleStrip,
 		}
-	};
+	};*/
 
 	// Transform from World -> View -> Projected -> Raster
 	VertexTransformationFunction(meshes);
@@ -255,36 +257,22 @@ void dae::Renderer::Render_W2_P1()
 			for (uint32_t indice{}; indice < mesh.indices.size() - 2; indice++)
 			{
 				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[indice]];
-				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[indice + 1]];
-				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[indice + 2]];
 
-				RenderTriangle(vertex1, vertex2, vertex3);
+				if (indice & 1)
+				{
+					const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[indice + 2]];
+					const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[indice + 1]];
+
+					RenderTriangle(vertex1, vertex2, vertex3);
+				}
+				else
+				{
+					const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[indice + 1]];
+					const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[indice + 2]];
+
+					RenderTriangle(vertex1, vertex2, vertex3);
+				}
 			}
-		}
-	}
-}
-
-void Renderer::Render_Test()
-{
-	for (uint32_t x{}; x < m_Width; x++)
-	{
-		for (uint32_t y{}; y < m_Height; y++)
-		{
-			ColorRGB finalColor = { 1,1,1 };
-
-			//Update Color in Buffer
-			finalColor.MaxToOne();
-
-			if (x >= m_Width - 20 && y >= m_Height - 20)
-			{
-				m_pBackBufferPixels[x + (y * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
-					static_cast<uint8_t>(finalColor.r * 255),
-					static_cast<uint8_t>(finalColor.g * 255),
-					static_cast<uint8_t>(finalColor.b * 255));
-			}
-
-			
-
 		}
 	}
 }
@@ -340,7 +328,7 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 			position.y = ((1 - position.y) * (float)m_Height) / 2.f;
 
 			// Add vertex to vertices out and color
-			Vertex_Out rasterVertex{ position, vertex.color };
+			Vertex_Out rasterVertex{ position, vertex.color, vertex.uv };
 			mesh.vertices_out.push_back(rasterVertex);
 		}
 	}
@@ -359,25 +347,24 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 	const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
 
 	// create and clamp bounding box top left
-	const int topLeftX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
-	const int topLeftY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
-	const std::pair<uint32_t, uint32_t> topLeft = std::make_pair<uint32_t, uint32_t>(
-		static_cast<uint32_t>(std::clamp(topLeftX, 0, m_Width - 1)),
-		static_cast<uint32_t>(std::clamp(topLeftY, 0, m_Height - 1))
-		);
+	int maxX{}, maxY{};
+	maxX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
+	maxY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
+	
+	int minX{}, minY{};
+	minX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
+	minY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
 
-	// create and clamp bounding box bottom right
-	const int rightBottomX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
-	const int rightBottomY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
-	const std::pair<uint32_t, uint32_t> rightBottom = std::make_pair<uint32_t, uint32_t>(
-		static_cast<uint32_t>(std::clamp(rightBottomX, 0, m_Width - 1)),
-		static_cast<uint32_t>(std::clamp(rightBottomY, 0, m_Height - 1))
-		);
+	minX = std::clamp(minX - 1, 0, m_Width);
+	minY = std::clamp(minY - 1, 0, m_Height);
+
+	maxX = std::clamp(maxX + 1, 0, m_Width);
+	maxY = std::clamp(maxY + 1, 0, m_Height);
 
 
-	for (uint32_t px{ topLeft.first }; px < rightBottom.first; ++px)
+	for (int px{ minX }; px < maxX; ++px)
 	{
-		for (uint32_t py{ topLeft.second }; py < rightBottom.second; ++py)
+		for (int py{ minY }; py < maxY; ++py)
 		{
 			Vector2 point{ (float)px, (float)py };
 
@@ -400,7 +387,7 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				// Get the hit point Z with the barycentric weights
 
 				// Get the relative z
-				const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
+				const float z = 1 / ( (1 / vertex0z * w0) + ( 1 / vertex1z * w1) +  (1 / vertex2z * w2));
 
 				const int pixelZIndex = py * m_Width + px;
 
@@ -408,7 +395,8 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				if (z < m_pDepthBufferPixels[pixelZIndex])
 				{
 					m_pDepthBufferPixels[pixelZIndex] = z;
-					ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
+					Vector2 interpolatedUvCoordinates = (v1.uv * (w0 / vertex0z) + v2.uv * (w1 /  vertex1z) + v3.uv * (w2 / vertex2z)) * z;
+					ColorRGB finalColor = m_pTextureBuffer->Sample(interpolatedUvCoordinates);
 
 					//Update Color in Buffer
 					finalColor.MaxToOne();
