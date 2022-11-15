@@ -12,6 +12,7 @@
 #include "Matrix.h"
 #include "Texture.h"
 #include "Utils.h"
+#include <assert.h>
 
 using namespace dae;
 
@@ -177,7 +178,7 @@ void Renderer::Render_W1()
 
 void dae::Renderer::Render_W2_P1()
 {
-	std::vector<Mesh> meshes
+	/*std::vector<Mesh> meshes
 	{
 		Mesh
 		{
@@ -199,6 +200,30 @@ void dae::Renderer::Render_W2_P1()
 			},
 			PrimitiveTopology::TriangeList,
 		}
+	};*/
+
+	std::vector<Mesh> meshes
+	{
+		Mesh
+		{
+			{
+				Vertex{{ -3,3,-2}},
+				Vertex{{ 0,3,-2}},
+				Vertex{{ 3,3,-2}},
+				Vertex{{ -3,0,-2}},
+				Vertex{{ 0,0,-2}},
+				Vertex{{ 3,0,-2}},
+				Vertex{{ -3,-3,-2}},
+				Vertex{{ 0,-3,-2}},
+				Vertex{{ 3,-3,-2}},
+			},
+			{
+				3,0,4,1,5,2,
+				2,6,
+				6,3,7,4,8,5
+			},
+			PrimitiveTopology::TriangleStrip,
+		}
 	};
 
 	// Transform from World -> View -> Projected -> Raster
@@ -212,80 +237,28 @@ void dae::Renderer::Render_W2_P1()
 
 	for (const auto& mesh : meshes)
 	{
-		for (int vertexIndex{}; vertexIndex < mesh.vertices_out.size(); vertexIndex += 3)
+		if (mesh.primitiveTopology == PrimitiveTopology::TriangeList)
 		{
-			std::vector<Vertex_Out> triangle{
-				 mesh.vertices_out[vertexIndex],
-				 mesh.vertices_out[vertexIndex + 1],
-				 mesh.vertices_out[vertexIndex + 2]
-			};
+			const uint32_t amountOfTriangles = ((uint32_t)mesh.indices.size()) / 3;
 
-			const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
-			const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
-			const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
-
-			// create and clamp bounding box top left
-			const int topLeftX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
-			const int topLeftY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
-			const std::pair<uint32_t, uint32_t> topLeft = std::make_pair<uint32_t, uint32_t>(
-				static_cast<uint32_t>(std::clamp(topLeftX, 0, m_Width - 1)),
-				static_cast<uint32_t>(std::clamp(topLeftY, 0, m_Height - 1))
-				);
-
-			// create and clamp bounding box bottom right
-			const int rightBottomX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
-			const int rightBottomY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
-			const std::pair<uint32_t, uint32_t> rightBottom = std::make_pair<uint32_t, uint32_t>(
-				static_cast<uint32_t>(std::clamp(rightBottomX, 0, m_Width - 1)),
-				static_cast<uint32_t>(std::clamp(rightBottomY, 0, m_Height - 1))
-				);
-
-
-			for (uint32_t px{ topLeft.first }; px < rightBottom.first; ++px)
+			for (uint32_t index{}; index < amountOfTriangles; index++)
 			{
-				for (uint32_t py{ topLeft.second }; py < rightBottom.second; ++py)
-				{
-					Vector2 point{ (float)px, (float)py };
+				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[3 * index]];
+				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[3 * index + 1]];
+				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[3 * index + 2]];
 
-					// Barycentric coordinates
-					const float w0 = EdgeFunction(vertex1, vertex2, point);
-					const float w1 = EdgeFunction(vertex2, vertex0, point);
-					const float w2 = EdgeFunction(vertex0, vertex1, point);
-					const float area = w0 + w1 + w2;
+				RenderTriangle(vertex1, vertex2, vertex3);
+			}
+		}
+		else if (mesh.primitiveTopology == PrimitiveTopology::TriangleStrip)
+		{
+			for (uint32_t indice{}; indice < mesh.indices.size() - 2; indice++)
+			{
+				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[indice]];
+				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[indice + 1]];
+				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[indice + 2]];
 
-					// In triangle
-					const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
-
-					if (isInTriangle)
-					{
-						// Get relative Z components of triangle vertices
-						float vertex0z = triangle[0].position.z;
-						float vertex1z = triangle[1].position.z;
-						float vertex2z = triangle[2].position.z;
-
-						// Get the hit point Z with the barycentric weights
-
-						// Get the relative z
-						const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
-
-						const int pixelZIndex = py * m_Width + px;
-
-						// If new z value of pixel is lower than stored:
-						if (z < m_pDepthBufferPixels[pixelZIndex])
-						{
-							m_pDepthBufferPixels[pixelZIndex] = z;
-							ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
-
-							//Update Color in Buffer
-							finalColor.MaxToOne();
-
-							m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
-								static_cast<uint8_t>(finalColor.r * 255),
-								static_cast<uint8_t>(finalColor.g * 255),
-								static_cast<uint8_t>(finalColor.b * 255));
-						}
-					}
-				}
+				RenderTriangle(vertex1, vertex2, vertex3);
 			}
 		}
 	}
@@ -347,30 +320,9 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 	for (auto& mesh : meshes)
 	{
 		// Loop over indices (every 3 indices is triangle)
-		for (auto index : mesh.indices)
+		for (auto vertex : mesh.vertices)
 		{
-			// Termine how to handle vertices
-			const auto topologyMode = mesh.primitiveTopology;
-
-
-			if (topologyMode == PrimitiveTopology::TriangleStrip)
-			{
-				// Transform indices to be shorter
-
-				// Swap odd triangle group 2nd 3th triangle indices.
-				uint32_t triangleIndexGroup{};
-				for (uint32_t index{}; index < mesh.indices.size(); index += 3)
-				{
-					if (triangleIndexGroup & 1)
-					{
-						std::swap(mesh.indices[index + 1], mesh.indices[index + 2]);
-					}
-
-					triangleIndexGroup++;
-				}
-			}
-
-			const auto& vertexWorldSpace = mesh.vertices[index];
+			const auto& vertexWorldSpace = vertex;
 
 			// Transform world to view (camera space)
 			const Vector3 viewSpaceVertex = m_Camera.viewMatrix.TransformPoint(vertexWorldSpace.position);
@@ -388,8 +340,85 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 			position.y = ((1 - position.y) * (float)m_Height) / 2.f;
 
 			// Add vertex to vertices out and color
-			Vertex_Out rasterVertex{ position, mesh.vertices[index].color };
-			mesh.vertices_out.emplace_back(rasterVertex);
+			Vertex_Out rasterVertex{ position, vertex.color };
+			mesh.vertices_out.push_back(rasterVertex);
+		}
+	}
+}
+
+void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
+{
+	std::vector<Vertex_Out> triangle{
+		v1,
+		v2,
+		v3,
+	};
+
+	const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
+	const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
+	const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
+
+	// create and clamp bounding box top left
+	const int topLeftX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
+	const int topLeftY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
+	const std::pair<uint32_t, uint32_t> topLeft = std::make_pair<uint32_t, uint32_t>(
+		static_cast<uint32_t>(std::clamp(topLeftX, 0, m_Width - 1)),
+		static_cast<uint32_t>(std::clamp(topLeftY, 0, m_Height - 1))
+		);
+
+	// create and clamp bounding box bottom right
+	const int rightBottomX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
+	const int rightBottomY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
+	const std::pair<uint32_t, uint32_t> rightBottom = std::make_pair<uint32_t, uint32_t>(
+		static_cast<uint32_t>(std::clamp(rightBottomX, 0, m_Width - 1)),
+		static_cast<uint32_t>(std::clamp(rightBottomY, 0, m_Height - 1))
+		);
+
+
+	for (uint32_t px{ topLeft.first }; px < rightBottom.first; ++px)
+	{
+		for (uint32_t py{ topLeft.second }; py < rightBottom.second; ++py)
+		{
+			Vector2 point{ (float)px, (float)py };
+
+			// Barycentric coordinates
+			const float w0 = EdgeFunction(vertex1, vertex2, point);
+			const float w1 = EdgeFunction(vertex2, vertex0, point);
+			const float w2 = EdgeFunction(vertex0, vertex1, point);
+			const float area = w0 + w1 + w2;
+
+			// In triangle
+			const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
+
+			if (isInTriangle)
+			{
+				// Get relative Z components of triangle vertices
+				float vertex0z = triangle[0].position.z;
+				float vertex1z = triangle[1].position.z;
+				float vertex2z = triangle[2].position.z;
+
+				// Get the hit point Z with the barycentric weights
+
+				// Get the relative z
+				const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
+
+				const int pixelZIndex = py * m_Width + px;
+
+				// If new z value of pixel is lower than stored:
+				if (z < m_pDepthBufferPixels[pixelZIndex])
+				{
+					m_pDepthBufferPixels[pixelZIndex] = z;
+					ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
+
+					//Update Color in Buffer
+					finalColor.MaxToOne();
+
+					m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+						static_cast<uint8_t>(finalColor.r * 255),
+						static_cast<uint8_t>(finalColor.g * 255),
+						static_cast<uint8_t>(finalColor.b * 255));
+				}
+			}
 		}
 	}
 }
