@@ -57,11 +57,8 @@ void Renderer::Render()
 	//Lock BackBuffer
 	SDL_LockSurface(m_pBackBuffer);
 
-	//Render_W1_Part1();
-	//Render_W1_Part2();
-	//Render_W1_Part3();
-	//Render_W1_Part4();
-	Render_W1_Part5();
+	//Render_W1();
+	Render_W2_P1();
 	//Render_Test();
 
 	//@END
@@ -71,7 +68,7 @@ void Renderer::Render()
 	SDL_UpdateWindowSurface(m_pWindow);
 }
 
-void Renderer::Render_W1_Part5()
+void Renderer::Render_W1()
 {
 	// World coordinates
 	const std::vector<Vertex> vertices_world
@@ -178,6 +175,122 @@ void Renderer::Render_W1_Part5()
 	}
 }
 
+void dae::Renderer::Render_W2_P1()
+{
+	std::vector<Mesh> meshes
+	{
+		Mesh
+		{
+			{
+				Vertex{{ -3,3,-2}},
+				Vertex{{ 0,3,-2}},
+				Vertex{{ 3,3,-2}},
+				Vertex{{ -3,0,-2}},
+				Vertex{{ 0,0,-2}},
+				Vertex{{ 3,0,-2}},
+				Vertex{{ -3,-3,-2}},
+				Vertex{{ 0,-3,-2}},
+				Vertex{{ 3,-3,-2}},
+			},
+			{
+				3,0,1,   1,4,3,   4,1,2,
+				2,5,4,   6,3,4,   4,7,6,
+				7,4,5,   5,8,7,
+			},
+			PrimitiveTopology::TriangeList,
+		}
+	};
+
+	// Transform from World -> View -> Projected -> Raster
+	VertexTransformationFunction(meshes);
+
+	// Make float array size of image that will act as depth buffer
+	std::fill_n(m_pDepthBufferPixels, m_Width * m_Height, FLT_MAX);
+
+	// Clear back buffer
+	SDL_FillRect(m_pBackBuffer, &m_pBackBuffer->clip_rect, SDL_MapRGB(m_pBackBuffer->format, 100, 100, 100));
+
+	for (const auto& mesh : meshes)
+	{
+		for (int vertexIndex{}; vertexIndex < mesh.vertices_out.size(); vertexIndex += 3)
+		{
+			std::vector<Vertex_Out> triangle{
+				 mesh.vertices_out[vertexIndex],
+				 mesh.vertices_out[vertexIndex + 1],
+				 mesh.vertices_out[vertexIndex + 2]
+			};
+
+			const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
+			const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
+			const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
+
+			// create and clamp bounding box top left
+			const int topLeftX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
+			const int topLeftY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
+			const std::pair<uint32_t, uint32_t> topLeft = std::make_pair<uint32_t, uint32_t>(
+				static_cast<uint32_t>(std::clamp(topLeftX, 0, m_Width - 1)),
+				static_cast<uint32_t>(std::clamp(topLeftY, 0, m_Height - 1))
+				);
+
+			// create and clamp bounding box bottom right
+			const int rightBottomX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
+			const int rightBottomY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
+			const std::pair<uint32_t, uint32_t> rightBottom = std::make_pair<uint32_t, uint32_t>(
+				static_cast<uint32_t>(std::clamp(rightBottomX, 0, m_Width - 1)),
+				static_cast<uint32_t>(std::clamp(rightBottomY, 0, m_Height - 1))
+				);
+
+
+			for (uint32_t px{ topLeft.first }; px < rightBottom.first; ++px)
+			{
+				for (uint32_t py{ topLeft.second }; py < rightBottom.second; ++py)
+				{
+					Vector2 point{ (float)px, (float)py };
+
+					// Barycentric coordinates
+					const float w0 = EdgeFunction(vertex1, vertex2, point);
+					const float w1 = EdgeFunction(vertex2, vertex0, point);
+					const float w2 = EdgeFunction(vertex0, vertex1, point);
+					const float area = w0 + w1 + w2;
+
+					// In triangle
+					const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
+
+					if (isInTriangle)
+					{
+						// Get relative Z components of triangle vertices
+						float vertex0z = triangle[0].position.z;
+						float vertex1z = triangle[1].position.z;
+						float vertex2z = triangle[2].position.z;
+
+						// Get the hit point Z with the barycentric weights
+
+						// Get the relative z
+						const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
+
+						const int pixelZIndex = py * m_Width + px;
+
+						// If new z value of pixel is lower than stored:
+						if (z < m_pDepthBufferPixels[pixelZIndex])
+						{
+							m_pDepthBufferPixels[pixelZIndex] = z;
+							ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
+
+							//Update Color in Buffer
+							finalColor.MaxToOne();
+
+							m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+								static_cast<uint8_t>(finalColor.r * 255),
+								static_cast<uint8_t>(finalColor.g * 255),
+								static_cast<uint8_t>(finalColor.b * 255));
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 void Renderer::Render_Test()
 {
 	for (uint32_t x{}; x < m_Width; x++)
@@ -201,9 +314,6 @@ void Renderer::Render_Test()
 
 		}
 	}
-
-
-	
 }
 
 void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const
@@ -229,6 +339,58 @@ void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_
 
 		Vertex rasterVertex{ position, vertices_in[vIndex].color };
 		vertices_out.emplace_back(rasterVertex);
+	}
+}
+
+void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
+{
+	for (auto& mesh : meshes)
+	{
+		// Loop over indices (every 3 indices is triangle)
+		for (auto index : mesh.indices)
+		{
+			// Termine how to handle vertices
+			const auto topologyMode = mesh.primitiveTopology;
+
+
+			if (topologyMode == PrimitiveTopology::TriangleStrip)
+			{
+				// Transform indices to be shorter
+
+				// Swap odd triangle group 2nd 3th triangle indices.
+				uint32_t triangleIndexGroup{};
+				for (uint32_t index{}; index < mesh.indices.size(); index += 3)
+				{
+					if (triangleIndexGroup & 1)
+					{
+						std::swap(mesh.indices[index + 1], mesh.indices[index + 2]);
+					}
+
+					triangleIndexGroup++;
+				}
+			}
+
+			const auto& vertexWorldSpace = mesh.vertices[index];
+
+			// Transform world to view (camera space)
+			const Vector3 viewSpaceVertex = m_Camera.viewMatrix.TransformPoint(vertexWorldSpace.position);
+
+			// Position buffer
+			Vector4 position{};
+
+			// Perspective divide -> Projection
+			position.x = (viewSpaceVertex.x / viewSpaceVertex.z) / (((float)m_Width / (float)m_Height) * m_Camera.fov);
+			position.y = (viewSpaceVertex.y / viewSpaceVertex.z) / m_Camera.fov;
+			position.z = viewSpaceVertex.z;
+
+			// Projection -> raster
+			position.x = ((position.x + 1) * (float)m_Width) / 2.f;
+			position.y = ((1 - position.y) * (float)m_Height) / 2.f;
+
+			// Add vertex to vertices out and color
+			Vertex_Out rasterVertex{ position, mesh.vertices[index].color };
+			mesh.vertices_out.emplace_back(rasterVertex);
+		}
 	}
 }
 
