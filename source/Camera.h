@@ -78,19 +78,7 @@ namespace dae
 			constexpr float nearPlane = .1f;
 			constexpr float farPlane = 100.f;
 
-			const float A = farPlane / (farPlane - nearPlane);
-			const float B = (-(farPlane * nearPlane)) / (farPlane - nearPlane);
-			const float OneOverAStFOV = 1.f / (aspectRatio * fov);
-			const float OneOverFOV = 1.f / fov;
-
-			projectionMatrix = Matrix{
-				Vector4{OneOverAStFOV, 0, 0, 0},
-				Vector4{0,OneOverFOV ,0,0},
-				Vector4{0,0,A,1},
-				Vector4{0,0,B,0},
-			};
-
-			//ProjectionMatrix => Matrix::CreatePerspectiveFovLH(...) [not implemented yet]
+			projectionMatrix =  Matrix::CreatePerspectiveFovLH(fov, aspectRatio, nearPlane, farPlane);
 			//DirectX Implementation => https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3dxmatrixperspectivefovlh
 		}
 

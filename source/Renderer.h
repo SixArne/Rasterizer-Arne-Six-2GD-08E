@@ -30,7 +30,6 @@ namespace dae
 
 		void Update(Timer* pTimer);
 		void Render();
-		void Render_W1();
 		void Render_W3();
 
 
@@ -56,7 +55,6 @@ namespace dae
 		int m_Height{};
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
-		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const; //W1 Version
 		void VertexTransformationFunction(std::vector<Mesh>& meshes) const; //W2 version
 
 		void RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3);

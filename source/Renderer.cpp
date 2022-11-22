@@ -34,7 +34,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
-	m_pTextureBuffer = Texture::LoadFromFile("Resources/tuktuk.png");
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/vehicle_diffuse.png");
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
@@ -45,11 +45,12 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 
-	Utils::ParseOBJ("Resources/tuktuk.obj", vertices, indices);
+	Utils::ParseOBJ("Resources/vehicle.obj", vertices, indices);
 
 	Mesh mesh{};
 	mesh.vertices = vertices;
 	mesh.indices = indices;
+	mesh.primitiveTopology = PrimitiveTopology::TriangleList;
 
 	m_Meshes.push_back(mesh);
 }
@@ -82,163 +83,8 @@ void Renderer::Render()
 	SDL_UpdateWindowSurface(m_pWindow);
 }
 
-void Renderer::Render_W1()
-{
-	// World coordinates
-	const std::vector<Vertex> vertices_world
-	{
-		// Triangle 0
-		{{0.f, 2.f, 0.f}, {1,0,0}},
-		{{1.5f, -1.f, .0f}, {1,0,0}},
-		{{-1.5f, -1.f, .0f}, {1,0,0}},
-
-		// Triangle 1
-		{{0.f, 4.f, 2.f}, {1,0,0}},
-		{{3.f, -2.f, 2.f}, {0,1,0}},
-		{{-3.f, -2.f, 2.f}, {0,0,1}},
-	};
-
-	// Buffer for raster
-	std::vector<Vertex> vertices_raster{};
-	vertices_raster.reserve(vertices_world.size());
-
-	// Transform from World -> View -> Projected -> Raster
-	VertexTransformationFunction(vertices_world, vertices_raster);
-
-	// Make float array size of image that will act as depth buffer
-	std::fill_n(m_pDepthBufferPixels, m_Width * m_Height, FLT_MAX);
-
-	// Clear back buffer
-	SDL_FillRect(m_pBackBuffer, &m_pBackBuffer->clip_rect, SDL_MapRGB(m_pBackBuffer->format, 100, 100, 100));
-
-	for (int vertexIndex{}; vertexIndex < vertices_raster.size(); vertexIndex += 3)
-	{
-		std::vector<Vertex> triangle{
-			vertices_raster[vertexIndex],
-			vertices_raster[vertexIndex + 1],
-			vertices_raster[vertexIndex + 2]
-		};
-
-		const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
-		const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
-		const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
-
-		// create and clamp bounding box top left
-		const int topLeftX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
-		const int topLeftY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
-		const std::pair<uint32_t, uint32_t> topLeft = std::make_pair<uint32_t, uint32_t>(
-			static_cast<uint32_t>(std::clamp(topLeftX, 0, m_Width - 1)),
-			static_cast<uint32_t>(std::clamp(topLeftY, 0, m_Height - 1))
-		);
-
-		// create and clamp bounding box bottom right
-		const int rightBottomX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
-		const int rightBottomY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
-		const std::pair<uint32_t, uint32_t> rightBottom = std::make_pair<uint32_t, uint32_t>(
-			static_cast<uint32_t>(std::clamp(rightBottomX, 0, m_Width - 1)),
-			static_cast<uint32_t>(std::clamp(rightBottomY, 0, m_Height - 1))
-		);
-
-
-		for (uint32_t px{topLeft.first}; px < rightBottom.first; ++px)
-		{
-			for (uint32_t py{topLeft.second}; py < rightBottom.second; ++py)
-			{
-				Vector2 point{ (float)px, (float)py };
-
-				// Barycentric coordinates
-				const float w0 = EdgeFunction(vertex1, vertex2, point);
-				const float w1 = EdgeFunction(vertex2, vertex0, point);
-				const float w2 = EdgeFunction(vertex0, vertex1, point);
-				const float area = w0 + w1 + w2;
-
-				// In triangle
-				const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
-
-				if (isInTriangle)
-				{
-					// Get relative Z components of triangle vertices
-					float vertex0z = triangle[0].position.z;
-					float vertex1z = triangle[1].position.z;
-					float vertex2z = triangle[2].position.z;
-
-					// Get the hit point Z with the barycentric weights
-
-					// Get the relative z
-					const float z = vertex0z * w0 + vertex1z * w1 + vertex2z * w2;
-
-					const int pixelZIndex = py * m_Width + px;
-
-					// If new z value of pixel is lower than stored:
-					if (z < m_pDepthBufferPixels[pixelZIndex])
-					{
-						m_pDepthBufferPixels[pixelZIndex] = z;
-						ColorRGB finalColor = { triangle[0].color * (w0 / area) + triangle[1].color * (w1 / area) + triangle[2].color * (w2 / area) };
-
-						//Update Color in Buffer
-						finalColor.MaxToOne();
-
-						m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
-							static_cast<uint8_t>(finalColor.r * 255),
-							static_cast<uint8_t>(finalColor.g * 255),
-							static_cast<uint8_t>(finalColor.b * 255));
-					}
-				}
-			}
-		}
-	}
-}
-
 void dae::Renderer::Render_W3()
 {
-	std::vector<Mesh> meshes
-	{
-		Mesh
-		{
-			{
-				Vertex{{ -3, 3,-2},{},{ 0, 0}},
-				Vertex{{  0, 3,-2},{},{.5, 0}},
-				Vertex{{  3, 3,-2},{},{ 1, 0}},
-				Vertex{{ -3, 0,-2},{},{ 0,.5}},
-				Vertex{{  0, 0,-2},{},{.5,.5}},
-				Vertex{{  3, 0,-2},{},{ 1,.5}},
-				Vertex{{ -3,-3,-2},{},{ 0, 1}},
-				Vertex{{  0,-3,-2},{},{.5, 1}},
-				Vertex{{  3,-3,-2},{},{ 1, 1}},
-			},
-			{
-				3,0,1,   1,4,3,   4,1,2,
-				2,5,4,   6,3,4,   4,7,6,
-				7,4,5,   5,8,7,
-			},
-			PrimitiveTopology::TriangleList,
-		}
-	};
-
-	/*std::vector<Mesh> meshes
-	{
-		Mesh
-		{
-			{
-				Vertex{{ -3,3,-2}},
-				Vertex{{ 0,3,-2}},
-				Vertex{{ 3,3,-2}},
-				Vertex{{ -3,0,-2}},
-				Vertex{{ 0,0,-2}},
-				Vertex{{ 3,0,-2}},
-				Vertex{{ -3,-3,-2}},
-				Vertex{{ 0,-3,-2}},
-				Vertex{{ 3,-3,-2}},
-			},
-			{
-				3,0,4,1,5,2,
-				2,6,
-				6,3,7,4,8,5
-			},
-			PrimitiveTopology::TriangleStrip,
-		}
-	};*/
-
 	// Transform from World -> View -> Projected -> Raster
 	VertexTransformationFunction(m_Meshes);
 
@@ -307,31 +153,6 @@ void dae::Renderer::Render_W3()
 	}
 }
 
-void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const
-{
-	for (size_t vIndex{}; vIndex < vertices_in.size(); ++vIndex)
-	{
-		Vertex vertexWorldSpace = vertices_in[vIndex];
-
-		// Transform world to view (camera space)
-		const Vector3 viewSpaceVertex = m_Camera.viewMatrix.TransformPoint(vertexWorldSpace.position);
-
-		// Position buffer
-		Vector3 position{};
-
-		// Perspective divide -> Projection
-		position.x = (viewSpaceVertex.x / viewSpaceVertex.z) / (((float)m_Width / (float)m_Height) * m_Camera.fov);
-		position.y = (viewSpaceVertex.y / viewSpaceVertex.z) / m_Camera.fov;
-		position.z = viewSpaceVertex.z;
-
-		// Projection -> raster
-		position.x = ((position.x + 1) * (float)m_Width) / 2.f;
-		position.y = ((1 - position.y) * (float)m_Height) / 2.f;
-
-		Vertex rasterVertex{ position, vertices_in[vIndex].color };
-		vertices_out.emplace_back(rasterVertex);
-	}
-}
 
 void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 {
@@ -366,66 +187,54 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 	}
 }
 
-void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
+void dae::Renderer::RenderTriangle(Vertex_Out vertex1, Vertex_Out vertex2, Vertex_Out vertex3)
 {
-	std::vector<Vertex_Out> triangle{
-		v1,
-		v2,
-		v3,
-	};
-
-	const Vector2 vertex0 = Vector2{ triangle[0].position.x, triangle[0].position.y };
-	const Vector2 vertex1 = Vector2{ triangle[1].position.x, triangle[1].position.y };
-	const Vector2 vertex2 = Vector2{ triangle[2].position.x, triangle[2].position.y };
+	const Vector2 v0 = Vector2{ vertex1.position.x, vertex1.position.y };
+	const Vector2 v1 = Vector2{ vertex2.position.x, vertex2.position.y };
+	const Vector2 v2 = Vector2{ vertex3.position.x, vertex3.position.y };
 
 	// create and clamp bounding box top left
 	int maxX{}, maxY{};
-	maxX = static_cast<int>(std::max(vertex0.x, std::max(vertex1.x, vertex2.x)));
-	maxY = static_cast<int>(std::max(vertex0.y, std::max(vertex1.y, vertex2.y)));
-	
+	maxX = static_cast<int>(std::max(v0.x, std::max(v1.x, v2.x)));
+	maxY = static_cast<int>(std::max(v0.y, std::max(v1.y, v2.y)));
+
 	int minX{}, minY{};
-	minX = static_cast<int>(std::min(vertex0.x, std::min(vertex1.x, vertex2.x)));
-	minY = static_cast<int>(std::min(vertex0.y, std::min(vertex1.y, vertex2.y)));
+	minX = static_cast<int>(std::min(v0.x, std::min(v1.x, v2.x)));
+	minY = static_cast<int>(std::min(v0.y, std::min(v1.y, v2.y)));
 
-	minX = std::clamp(minX - 1, 0, m_Width);
-	minY = std::clamp(minY - 1, 0, m_Height);
+	minX = std::clamp(minX, 0, m_Width);
+	minY = std::clamp(minY, 0, m_Height);
 
-	maxX = std::clamp(maxX + 1, 0, m_Width);
-	maxY = std::clamp(maxY + 1, 0, m_Height);
+	maxX = std::clamp(maxX, 0, m_Width);
+	maxY = std::clamp(maxY, 0, m_Height);
 
 
-	for (int px{ minX }; px < maxX; ++px)
+	for (int px{ minX }; px <= maxX; ++px)
 	{
-		for (int py{ minY }; py < maxY; ++py)
+		for (int py{ minY }; py <= maxY; ++py)
 		{
 			Vector2 point{ (float)px, (float)py };
 
 			// Barycentric coordinates
-			const float w0 = EdgeFunction(vertex1, vertex2, point);
-			const float w1 = EdgeFunction(vertex2, vertex0, point);
-			const float w2 = EdgeFunction(vertex0, vertex1, point);
-			const float area = w0 + w1 + w2;
+			float w0 = EdgeFunction(v1, v2, point);
+			float w1 = EdgeFunction(v2, v0, point);
+			float w2 = EdgeFunction(v0, v1, point);
+
 
 			// In triangle
 			const bool isInTriangle = w0 >= 0 && w1 >= 0 && w2 >= 0;
 
 			if (isInTriangle)
 			{
-				// Get relative Z components of triangle vertices
-				float v0w = triangle[0].position.w;
-				float v1w = triangle[1].position.w;
-				float v2w = triangle[2].position.w;
+				const float area = w0 + w1 + w2;
+				w0 /= area;
+				w1 /= area;
+				w2 /= area;
 
-				float v0z = triangle[0].position.z;
-				float v1z = triangle[1].position.z;
-				float v2z = triangle[2].position.z;
 
 				// Get the hit point Z with the barycentric weights
+				float z = 1.f / ((w0 / vertex1.position.z) + (w1 / vertex2.position.z) + (w2 / vertex3.position.z));
 
-				// Get the relative z
-				//const float z = 1.f / ( (1.f / v0z * w0) + ( 1.f / v1z * w1) +  (1.f / v2z * w2));
-				float z = 1.f / ( (w0 / v0z) + (w1 / v1z) +  (w2 / v2z));
-				
 				if (z < 0 || z > 1)
 				{
 					continue;
@@ -437,12 +246,16 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				if (z < m_pDepthBufferPixels[pixelZIndex])
 				{
 					m_pDepthBufferPixels[pixelZIndex] = z;
-					float wInterpolated = 1.f / ((1.f / v0w * w0) + (1.f / v1w * w1) + (1.f / v2w * w2));
-					Vector2 uvInterpolated = (v1.uv * (w0 / v0w) + v2.uv * (w1 /  v1w) + v3.uv * (w2 / v2w));
+
+					float wInterpolated = 1.f / ((w0 / vertex1.position.w) + (w1 / vertex2.position.w) + (w2 / vertex3.position.w));
+					Vector2 uvInterpolated = (vertex1.uv * (w0 / vertex1.position.w)) + (vertex2.uv * (w1 / vertex2.position.w)) + (vertex3.uv * (w2 / vertex3.position.w));
+					uvInterpolated *= wInterpolated;
+
+					uvInterpolated.x = std::clamp(uvInterpolated.x, 0.f, 1.f);
+					uvInterpolated.y = std::clamp(uvInterpolated.y, 0.f, 1.f);
 
 					//ColorRGB finalColor = { z,z,z };
-					ColorRGB finalColor = m_pTextureBuffer->Sample(uvInterpolated * wInterpolated);
-
+					ColorRGB finalColor = m_pTextureBuffer->Sample(uvInterpolated);
 
 					//Update Color in Buffer
 					finalColor.MaxToOne();
