@@ -40,7 +40,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
 
 	//Initialize Camera
-	m_Camera.Initialize(60.f, { .0f,.0f,-10.f });
+	m_Camera.Initialize((float)m_Width / (float)m_Height, 60.f, { .0f,.0f,-10.f });
 }
 
 Renderer::~Renderer()
@@ -253,11 +253,22 @@ void dae::Renderer::Render_W2_P1()
 			}*/
 
 			// fps go BRRRRRRRRRRRRRRR
+
 			concurrency::parallel_for(0u, amountOfTriangles, [=, this](int index)
 			{
 				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[3 * index]];
 				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[3 * index + 1]];
 				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[3 * index + 2]];
+
+				// cull triangles
+				if (vertex1.position.x < 0 || vertex2.position.x < 0 || vertex3.position.x < 0
+					|| vertex1.position.x > m_Width || vertex2.position.x > m_Width || vertex3.position.x > m_Width
+					|| vertex1.position.y < 0 || vertex2.position.y < 0 || vertex3.position.y < 0
+					|| vertex1.position.y > m_Height || vertex2.position.y > m_Height || vertex3.position.y > m_Height
+					)
+				{
+					return;
+				}
 
 				RenderTriangle(vertex1, vertex2, vertex3);
 			});
@@ -267,21 +278,30 @@ void dae::Renderer::Render_W2_P1()
 			for (uint32_t indice{}; indice < mesh.indices.size() - 2; indice++)
 			{
 				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[indice]];
+				Vertex_Out vertex2{};
+				Vertex_Out vertex3{};
 
 				if (indice & 1)
 				{
-					const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[indice + 2]];
-					const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[indice + 1]];
-
-					RenderTriangle(vertex1, vertex2, vertex3);
+					vertex2 = mesh.vertices_out[mesh.indices[indice + 2]];
+					vertex3 = mesh.vertices_out[mesh.indices[indice + 1]];
 				}
 				else
 				{
-					const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[indice + 1]];
-					const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[indice + 2]];
-
-					RenderTriangle(vertex1, vertex2, vertex3);
+					vertex2 = mesh.vertices_out[mesh.indices[indice + 1]];
+					vertex3 = mesh.vertices_out[mesh.indices[indice + 2]];
 				}
+
+				if (vertex1.position.x < 0 || vertex2.position.x < 0 || vertex3.position.x < 0
+					|| vertex1.position.x > m_Width || vertex2.position.x > m_Width || vertex3.position.x > m_Width
+					|| vertex1.position.y < 0 || vertex2.position.y < 0 || vertex3.position.y < 0
+					|| vertex1.position.y > m_Height || vertex2.position.y > m_Height || vertex3.position.y > m_Height
+					)
+				{
+					return;
+				}
+
+				RenderTriangle(vertex1, vertex2, vertex3);
 			}
 		}
 	}
@@ -313,17 +333,20 @@ void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_
 	}
 }
 
+#define proj
+
 void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 {
+	// Calculate once
+	const auto worldViewProjectionMatrix = m_Camera.viewMatrix * m_Camera.projectionMatrix;
 	for (auto& mesh : meshes)
 	{
 		// Loop over indices (every 3 indices is triangle)
-		for (auto vertex : mesh.vertices)
+		for (const auto vertex : mesh.vertices)
 		{
-			const auto& vertexWorldSpace = vertex;
-
+#ifndef proj
 			// Transform world to view (camera space)
-			const Vector3 viewSpaceVertex = m_Camera.viewMatrix.TransformPoint(vertexWorldSpace.position);
+			const Vector3 viewSpaceVertex = m_Camera.viewMatrix.TransformPoint(vertex.position);
 
 			// Position buffer
 			Vector4 position{};
@@ -340,6 +363,30 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 			// Add vertex to vertices out and color
 			Vertex_Out rasterVertex{ position, vertex.color, vertex.uv };
 			mesh.vertices_out.push_back(rasterVertex);
+#endif
+
+			
+
+#ifdef proj
+			// Transform world to view (camera space)
+			auto position = Vector4{ vertex.position, 1 };
+
+			// Transform point
+			auto transformedVertex =  worldViewProjectionMatrix.TransformPoint(position);
+	
+			// perspective divide
+			transformedVertex.x /= transformedVertex.w;
+			transformedVertex.y /= transformedVertex.w;
+			transformedVertex.z /= transformedVertex.w;
+
+			// NDC to raster coords
+			transformedVertex.x = ((transformedVertex.x + 1) * (float)m_Width)  / 2.f;
+			transformedVertex.y = ((1 - transformedVertex.y) * (float)m_Height) / 2.f;
+
+			// Add vertex to vertices out and color
+			Vertex_Out rasterVertex{ transformedVertex, vertex.color, vertex.uv };
+			mesh.vertices_out.push_back(rasterVertex);
+#endif
 		}
 	}
 }
@@ -390,6 +437,10 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 			if (isInTriangle)
 			{
 				// Get relative Z components of triangle vertices
+				float v0w = triangle[0].position.w;
+				float v1w = triangle[1].position.w;
+				float v2w = triangle[2].position.w;
+
 				float v0z = triangle[0].position.z;
 				float v1z = triangle[1].position.z;
 				float v2z = triangle[2].position.z;
@@ -405,11 +456,11 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				if (z < m_pDepthBufferPixels[pixelZIndex])
 				{
 					m_pDepthBufferPixels[pixelZIndex] = z;
-					Vector2 interpolatedUvCoordinates = (v1.uv * (w0 / v0z) + v2.uv * (w1 /  v1z) + v3.uv * (w2 / v2z)) * z;
-					interpolatedUvCoordinates.x = std::clamp(interpolatedUvCoordinates.x, 0.f, 1.f);
-					interpolatedUvCoordinates.y = std::clamp(interpolatedUvCoordinates.y, 0.f, 1.f);
+					float wInterpolated = 1.f / ((1 / v0w * w0) + (1 / v1w * w1) + (1 / v2w * w2));
+					Vector2 uvInterpolated = (v1.uv * (w0 / v0w) + v2.uv * (w1 /  v1w) + v3.uv * (w2 / v2w));
 
-					ColorRGB finalColor = m_pTextureBuffer->Sample(interpolatedUvCoordinates);
+					ColorRGB finalColor = m_pTextureBuffer->Sample(uvInterpolated * wInterpolated);
+
 
 					//Update Color in Buffer
 					finalColor.MaxToOne();
