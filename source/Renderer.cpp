@@ -34,13 +34,24 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
-	m_pTextureBuffer = Texture::LoadFromFile("Resources/uv_grid_2.png");
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/tuktuk.png");
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
 
 	//Initialize Camera
 	m_Camera.Initialize((float)m_Width / (float)m_Height, 60.f, { .0f,.0f,-10.f });
+
+	std::vector<Vertex> vertices{};
+	std::vector<uint32_t> indices{};
+
+	Utils::ParseOBJ("Resources/tuktuk.obj", vertices, indices);
+
+	Mesh mesh{};
+	mesh.vertices = vertices;
+	mesh.indices = indices;
+
+	m_Meshes.push_back(mesh);
 }
 
 Renderer::~Renderer()
@@ -61,7 +72,7 @@ void Renderer::Render()
 	SDL_LockSurface(m_pBackBuffer);
 
 	//Render_W1();
-	Render_W2_P1();
+	Render_W3();
 	//Render_Test();
 
 	//@END
@@ -178,7 +189,7 @@ void Renderer::Render_W1()
 	}
 }
 
-void dae::Renderer::Render_W2_P1()
+void dae::Renderer::Render_W3()
 {
 	std::vector<Mesh> meshes
 	{
@@ -200,7 +211,7 @@ void dae::Renderer::Render_W2_P1()
 				2,5,4,   6,3,4,   4,7,6,
 				7,4,5,   5,8,7,
 			},
-			PrimitiveTopology::TriangeList,
+			PrimitiveTopology::TriangleList,
 		}
 	};
 
@@ -229,7 +240,7 @@ void dae::Renderer::Render_W2_P1()
 	};*/
 
 	// Transform from World -> View -> Projected -> Raster
-	VertexTransformationFunction(meshes);
+	VertexTransformationFunction(m_Meshes);
 
 	// Make float array size of image that will act as depth buffer
 	std::fill_n(m_pDepthBufferPixels, m_Width * m_Height, FLT_MAX);
@@ -237,22 +248,11 @@ void dae::Renderer::Render_W2_P1()
 	// Clear back buffer
 	SDL_FillRect(m_pBackBuffer, &m_pBackBuffer->clip_rect, SDL_MapRGB(m_pBackBuffer->format, 100, 100, 100));
 
-	for (const auto& mesh : meshes)
+	for (const auto& mesh : m_Meshes)
 	{
-		if (mesh.primitiveTopology == PrimitiveTopology::TriangeList)
+		if (mesh.primitiveTopology == PrimitiveTopology::TriangleList)
 		{
 			const uint32_t amountOfTriangles = ((uint32_t)mesh.indices.size()) / 3;
-
-			/*for (uint32_t index{}; index < amountOfTriangles; index++)
-			{
-				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[3 * index]];
-				const Vertex_Out vertex2 = mesh.vertices_out[mesh.indices[3 * index + 1]];
-				const Vertex_Out vertex3 = mesh.vertices_out[mesh.indices[3 * index + 2]];
-
-				RenderTriangle(vertex1, vertex2, vertex3);
-			}*/
-
-			// fps go BRRRRRRRRRRRRRRR
 
 			concurrency::parallel_for(0u, amountOfTriangles, [=, this](int index)
 			{
@@ -333,41 +333,17 @@ void Renderer::VertexTransformationFunction(const std::vector<Vertex>& vertices_
 	}
 }
 
-#define proj
-
 void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 {
 	// Calculate once
 	const auto worldViewProjectionMatrix = m_Camera.viewMatrix * m_Camera.projectionMatrix;
 	for (auto& mesh : meshes)
 	{
+		mesh.vertices_out.clear();
+
 		// Loop over indices (every 3 indices is triangle)
 		for (const auto vertex : mesh.vertices)
 		{
-#ifndef proj
-			// Transform world to view (camera space)
-			const Vector3 viewSpaceVertex = m_Camera.viewMatrix.TransformPoint(vertex.position);
-
-			// Position buffer
-			Vector4 position{};
-
-			// Perspective divide -> Projection
-			position.x = (viewSpaceVertex.x / viewSpaceVertex.z) / (((float)m_Width / (float)m_Height) * m_Camera.fov);
-			position.y = (viewSpaceVertex.y / viewSpaceVertex.z) / m_Camera.fov;
-			position.z = viewSpaceVertex.z;
-
-			// Projection -> raster
-			position.x = ((position.x + 1) * (float)m_Width) / 2.f;
-			position.y = ((1 - position.y) * (float)m_Height) / 2.f;
-
-			// Add vertex to vertices out and color
-			Vertex_Out rasterVertex{ position, vertex.color, vertex.uv };
-			mesh.vertices_out.push_back(rasterVertex);
-#endif
-
-			
-
-#ifdef proj
 			// Transform world to view (camera space)
 			auto position = Vector4{ vertex.position, 1 };
 
@@ -386,7 +362,6 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 			// Add vertex to vertices out and color
 			Vertex_Out rasterVertex{ transformedVertex, vertex.color, vertex.uv };
 			mesh.vertices_out.push_back(rasterVertex);
-#endif
 		}
 	}
 }
@@ -448,7 +423,13 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				// Get the hit point Z with the barycentric weights
 
 				// Get the relative z
-				const float z = 1 / ( (1 / v0z * w0) + ( 1 / v1z * w1) +  (1 / v2z * w2));
+				//const float z = 1.f / ( (1.f / v0z * w0) + ( 1.f / v1z * w1) +  (1.f / v2z * w2));
+				float z = 1.f / ( (w0 / v0z) + (w1 / v1z) +  (w2 / v2z));
+				
+				if (z < 0 || z > 1)
+				{
+					continue;
+				}
 
 				const int pixelZIndex = py * m_Width + px;
 
@@ -456,9 +437,10 @@ void dae::Renderer::RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3)
 				if (z < m_pDepthBufferPixels[pixelZIndex])
 				{
 					m_pDepthBufferPixels[pixelZIndex] = z;
-					float wInterpolated = 1.f / ((1 / v0w * w0) + (1 / v1w * w1) + (1 / v2w * w2));
+					float wInterpolated = 1.f / ((1.f / v0w * w0) + (1.f / v1w * w1) + (1.f / v2w * w2));
 					Vector2 uvInterpolated = (v1.uv * (w0 / v0w) + v2.uv * (w1 /  v1w) + v3.uv * (w2 / v2w));
 
+					//ColorRGB finalColor = { z,z,z };
 					ColorRGB finalColor = m_pTextureBuffer->Sample(uvInterpolated * wInterpolated);
 
 

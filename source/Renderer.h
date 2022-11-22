@@ -31,7 +31,7 @@ namespace dae
 		void Update(Timer* pTimer);
 		void Render();
 		void Render_W1();
-		void Render_W2_P1();
+		void Render_W3();
 
 
 		bool SaveBufferToImage() const;
@@ -49,6 +49,8 @@ namespace dae
 		float* m_pDepthBufferPixels{};
 
 		Camera m_Camera{};
+
+		std::vector<Mesh> m_Meshes{};
 
 		int m_Width{};
 		int m_Height{};
