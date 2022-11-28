@@ -28,8 +28,8 @@ int main(int argc, char* args[])
 	//Create window + surfaces
 	SDL_Init(SDL_INIT_VIDEO);
 
-	const uint32_t width = 640;
-	const uint32_t height = 480;
+	const uint32_t width = 1600; // 640 x 480 change later
+	const uint32_t height = 900;
 
 	SDL_Window* pWindow = SDL_CreateWindow(
 		"Rasterizer - Six Arne 2DAE08",

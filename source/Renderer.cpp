@@ -34,7 +34,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
-	m_pTextureBuffer = Texture::LoadFromFile("Resources/vehicle_diffuse.png");
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/Vehicle_diffuse.png");
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
@@ -45,12 +45,16 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 
-	Utils::ParseOBJ("Resources/vehicle.obj", vertices, indices);
+	Utils::ParseOBJ("Resources/Vehicle.obj", vertices, indices);
 
 	Mesh mesh{};
 	mesh.vertices = vertices;
 	mesh.indices = indices;
 	mesh.primitiveTopology = PrimitiveTopology::TriangleList;
+	mesh.transformMatrix = Matrix::CreateTranslation({ 0,-5,50 });
+	mesh.scaleMatrix = Matrix::CreateScale({ 1,1,1 });
+	mesh.rotationMatrix = Matrix::CreateRotationY(90 * TO_RADIANS);
+	mesh.worldMatrix = mesh.scaleMatrix * mesh.rotationMatrix * mesh.transformMatrix;
 
 	m_Meshes.push_back(mesh);
 }
@@ -64,6 +68,11 @@ Renderer::~Renderer()
 void Renderer::Update(Timer* pTimer)
 {
 	m_Camera.Update(pTimer);
+
+	for (Mesh& mesh : m_Meshes)
+	{
+		mesh.SetRotationY((cos(pTimer->GetTotal()) + 1.f) / 2.f * PI_2);
+	}
 }
 
 void Renderer::Render()
@@ -73,7 +82,7 @@ void Renderer::Render()
 	SDL_LockSurface(m_pBackBuffer);
 
 	//Render_W1();
-	Render_W3();
+	RenderFrame();
 	//Render_Test();
 
 	//@END
@@ -83,7 +92,7 @@ void Renderer::Render()
 	SDL_UpdateWindowSurface(m_pWindow);
 }
 
-void dae::Renderer::Render_W3()
+void dae::Renderer::RenderFrame()
 {
 	// Transform from World -> View -> Projected -> Raster
 	VertexTransformationFunction(m_Meshes);
@@ -99,7 +108,7 @@ void dae::Renderer::Render_W3()
 		if (mesh.primitiveTopology == PrimitiveTopology::TriangleList)
 		{
 			const uint32_t amountOfTriangles = ((uint32_t)mesh.indices.size()) / 3;
-
+			
 			concurrency::parallel_for(0u, amountOfTriangles, [=, this](int index)
 			{
 				const Vertex_Out vertex1 = mesh.vertices_out[mesh.indices[3 * index]];
@@ -157,9 +166,11 @@ void dae::Renderer::Render_W3()
 void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 {
 	// Calculate once
-	const auto worldViewProjectionMatrix = m_Camera.viewMatrix * m_Camera.projectionMatrix;
 	for (auto& mesh : meshes)
 	{
+		Matrix worldMatrix = mesh.scaleMatrix * mesh.rotationMatrix * mesh.transformMatrix;
+		const auto worldViewProjectionMatrix = worldMatrix * m_Camera.viewMatrix * m_Camera.projectionMatrix;
+
 		mesh.vertices_out.clear();
 
 		// Loop over indices (every 3 indices is triangle)

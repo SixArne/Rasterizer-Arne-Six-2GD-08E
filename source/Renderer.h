@@ -30,7 +30,7 @@ namespace dae
 
 		void Update(Timer* pTimer);
 		void Render();
-		void Render_W3();
+		void RenderFrame();
 
 
 		bool SaveBufferToImage() const;
@@ -53,6 +53,7 @@ namespace dae
 
 		int m_Width{};
 		int m_Height{};
+		int m_CurrentFrame{};
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
 		void VertexTransformationFunction(std::vector<Mesh>& meshes) const; //W2 version

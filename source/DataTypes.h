@@ -38,5 +38,10 @@ namespace dae
 
 		std::vector<Vertex_Out> vertices_out{};
 		Matrix worldMatrix{};
+		Matrix transformMatrix{};
+		Matrix scaleMatrix{};
+		Matrix rotationMatrix{};
+
+		void SetRotationY(float yaw) { rotationMatrix = Matrix::CreateRotationY(yaw); };
 	};
 }
