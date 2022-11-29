@@ -34,7 +34,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
-	m_pTextureBuffer = Texture::LoadFromFile("Resources/Vehicle_diffuse.png");
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/TukTuk.png");
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
@@ -45,13 +45,13 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 
-	Utils::ParseOBJ("Resources/Vehicle.obj", vertices, indices);
+	Utils::ParseOBJ("Resources/TukTuk.obj", vertices, indices);
 
 	Mesh mesh{};
 	mesh.vertices = vertices;
 	mesh.indices = indices;
 	mesh.primitiveTopology = PrimitiveTopology::TriangleList;
-	mesh.transformMatrix = Matrix::CreateTranslation({ 0,-5,50 });
+	mesh.transformMatrix = Matrix::CreateTranslation({ 0,-5,30 });
 	mesh.scaleMatrix = Matrix::CreateScale({ 1,1,1 });
 	mesh.rotationMatrix = Matrix::CreateRotationY(90 * TO_RADIANS);
 	mesh.worldMatrix = mesh.scaleMatrix * mesh.rotationMatrix * mesh.transformMatrix;
@@ -84,6 +84,8 @@ void Renderer::Render()
 	//Render_W1();
 	RenderFrame();
 	//Render_Test();
+
+
 
 	//@END
 	//Update SDL Surface
@@ -265,8 +267,16 @@ void dae::Renderer::RenderTriangle(Vertex_Out vertex1, Vertex_Out vertex2, Verte
 					uvInterpolated.x = std::clamp(uvInterpolated.x, 0.f, 1.f);
 					uvInterpolated.y = std::clamp(uvInterpolated.y, 0.f, 1.f);
 
-					//ColorRGB finalColor = { z,z,z };
-					ColorRGB finalColor = m_pTextureBuffer->Sample(uvInterpolated);
+					ColorRGB finalColor{ };
+					if (!m_IsDisplayingDepthBuffer)
+					{
+						finalColor = m_pTextureBuffer->Sample(uvInterpolated);
+					}
+					else
+					{
+						float depthValue = Utils::Remap(z, 0.995f, 1.f);
+						finalColor = { depthValue, depthValue, depthValue };
+					}
 
 					//Update Color in Buffer
 					finalColor.MaxToOne();

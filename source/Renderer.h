@@ -32,6 +32,7 @@ namespace dae
 		void Render();
 		void RenderFrame();
 
+		void ToggleDisplayRenderDepthBuffer() { m_IsDisplayingDepthBuffer = !m_IsDisplayingDepthBuffer; };
 
 		bool SaveBufferToImage() const;
 
@@ -46,6 +47,7 @@ namespace dae
 		uint32_t* m_pBackBufferPixels{};
 
 		float* m_pDepthBufferPixels{};
+		bool m_IsDisplayingDepthBuffer{};
 
 		Camera m_Camera{};
 
