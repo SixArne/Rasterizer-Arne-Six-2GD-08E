@@ -34,7 +34,8 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
-	m_pTextureBuffer = Texture::LoadFromFile("Resources/TukTuk.png");
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/Vehicle_diffuse.png");
+	m_pNormalBuffer = Texture::LoadFromFile("Resources/Vehicle_normal.png");
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
@@ -45,13 +46,13 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 
-	Utils::ParseOBJ("Resources/TukTuk.obj", vertices, indices);
+	Utils::ParseOBJ("Resources/Vehicle.obj", vertices, indices);
 
 	Mesh mesh{};
 	mesh.vertices = vertices;
 	mesh.indices = indices;
 	mesh.primitiveTopology = PrimitiveTopology::TriangleList;
-	mesh.transformMatrix = Matrix::CreateTranslation({ 0,-5,30 });
+	mesh.transformMatrix = Matrix::CreateTranslation({ 0,0,30 });
 	mesh.scaleMatrix = Matrix::CreateScale({ 1,1,1 });
 	mesh.rotationMatrix = Matrix::CreateRotationY(90 * TO_RADIANS);
 	mesh.worldMatrix = mesh.scaleMatrix * mesh.rotationMatrix * mesh.transformMatrix;
@@ -63,6 +64,7 @@ Renderer::~Renderer()
 {
 	delete[] m_pDepthBufferPixels;
 	delete m_pTextureBuffer;
+	delete m_pNormalBuffer;
 }
 
 void Renderer::Update(Timer* pTimer)
@@ -71,7 +73,10 @@ void Renderer::Update(Timer* pTimer)
 
 	for (Mesh& mesh : m_Meshes)
 	{
-		mesh.SetRotationY((cos(pTimer->GetTotal()) + 1.f) / 2.f * PI_2);
+		if (m_ShouldRotateModel)
+		{
+			mesh.SetRotationY((cos(pTimer->GetTotal()) + 1.f) / 2.f * PI_2);
+		}
 	}
 }
 
@@ -164,6 +169,19 @@ void dae::Renderer::RenderFrame()
 	}
 }
 
+void Renderer::ToggleDisplayRenderDepthBuffer()
+{
+	if (m_CurrentCycle != ShadingCycle::DepthMode)
+	{
+		m_LastCycle = m_CurrentCycle;
+		m_CurrentCycle = ShadingCycle::DepthMode;
+	}
+	else
+	{
+		m_CurrentCycle = m_LastCycle;
+	}
+}
+
 
 void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 {
@@ -194,7 +212,20 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 			transformedVertex.y = ((1 - transformedVertex.y) * (float)m_Height) / 2.f;
 
 			// Add vertex to vertices out and color
-			Vertex_Out rasterVertex{ transformedVertex, vertex.color, vertex.uv };
+			Vertex_Out rasterVertex{};
+			rasterVertex.position = transformedVertex;
+			rasterVertex.color = vertex.color;
+			rasterVertex.uv = vertex.uv;
+
+			Vector3 transformedNormals = worldMatrix.TransformVector(vertex.normal);
+			transformedNormals.Normalize();
+
+			Vector3 transformedTangent = worldMatrix.TransformVector(vertex.tangent);
+			transformedTangent.Normalize();
+
+			rasterVertex.normal = transformedNormals;
+			rasterVertex.tangent = transformedTangent;
+
 			mesh.vertices_out.push_back(rasterVertex);
 		}
 	}
@@ -259,18 +290,51 @@ void dae::Renderer::RenderTriangle(Vertex_Out vertex1, Vertex_Out vertex2, Verte
 				if (z < m_pDepthBufferPixels[pixelZIndex])
 				{
 					m_pDepthBufferPixels[pixelZIndex] = z;
+					const float wInterpolated = 1.f / ((w0 / vertex1.position.w) + (w1 / vertex2.position.w) + (w2 / vertex3.position.w));
 
-					float wInterpolated = 1.f / ((w0 / vertex1.position.w) + (w1 / vertex2.position.w) + (w2 / vertex3.position.w));
+					// color interpolated
+					ColorRGB interpolatedColor = (vertex1.color * (w0 / vertex1.position.w)) + (vertex2.color * (w1 / vertex2.position.w)) + (vertex3.color * (w2 / vertex3.position.w));
+					interpolatedColor *= wInterpolated;
+
+					// uv interpolated
 					Vector2 uvInterpolated = (vertex1.uv * (w0 / vertex1.position.w)) + (vertex2.uv * (w1 / vertex2.position.w)) + (vertex3.uv * (w2 / vertex3.position.w));
 					uvInterpolated *= wInterpolated;
 
 					uvInterpolated.x = std::clamp(uvInterpolated.x, 0.f, 1.f);
 					uvInterpolated.y = std::clamp(uvInterpolated.y, 0.f, 1.f);
 
-					ColorRGB finalColor{ };
-					if (!m_IsDisplayingDepthBuffer)
+					// normal interpolated
+					Vector3 normalInterpolated =
+						(vertex1.normal * (w0 / vertex1.position.w)) +
+						(vertex2.normal * (w1 / vertex2.position.w)) +
+						(vertex3.normal * (w2 / vertex3.position.w));
+					normalInterpolated *= wInterpolated;
+					normalInterpolated.Normalize();
+
+					// tangent interpolated
+					Vector3 tangentInterpolated = (vertex1.tangent * (w0 / vertex1.position.w)) + (vertex2.tangent * (w1 / vertex2.position.w)) + (vertex3.tangent* (w2 / vertex3.position.w));
+					tangentInterpolated *= wInterpolated;
+					tangentInterpolated.Normalize();
+
+					// view dir interpolated
+					Vector3 viewDirInterpolated = (vertex1.viewDirection * (w0 / vertex1.position.w)) + (vertex2.viewDirection * (w1 / vertex2.position.w)) + (vertex3.viewDirection * (w2 / vertex3.position.w));
+					viewDirInterpolated *= wInterpolated;
+					viewDirInterpolated.Normalize();
+
+					Vertex_Out fragmentToShade{};
+					fragmentToShade.color = interpolatedColor;
+					fragmentToShade.position = Vector4{(float)px,(float)py,z, wInterpolated};
+					fragmentToShade.uv = uvInterpolated;
+					fragmentToShade.normal = normalInterpolated;
+					fragmentToShade.tangent = tangentInterpolated;
+					fragmentToShade.viewDirection = viewDirInterpolated;
+
+
+					ColorRGB finalColor{  };
+
+					if (m_CurrentCycle != ShadingCycle::DepthMode)
 					{
-						finalColor = m_pTextureBuffer->Sample(uvInterpolated);
+						finalColor = ShadePixel(fragmentToShade);
 					}
 					else
 					{
@@ -288,6 +352,77 @@ void dae::Renderer::RenderTriangle(Vertex_Out vertex1, Vertex_Out vertex2, Verte
 				}
 			}
 		}
+	}
+}
+
+ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
+{
+	// Normal map stuff
+	const Vector3 binormal = Vector3::Cross(vertex.normal, vertex.tangent).Normalized();
+	const Matrix tangentSpaceAxis = Matrix{vertex.tangent, binormal, vertex.normal, {0,0,0}};
+
+	// Sample normal
+	const ColorRGB normalColor = m_pNormalBuffer->Sample(vertex.uv);
+	Vector3 normalSample = { normalColor.r, normalColor.g, normalColor.b };
+	normalSample = 2.f * normalSample - Vector3{1.f, 1.f, 1.f};
+	normalSample = tangentSpaceAxis.TransformPoint(normalSample);
+	normalSample.Normalize();
+
+	const Vector3 lightDirection = { .577f, -.577f, .577f };
+	const float lightIntensity = 7.f;
+	const float specular = 25.f;
+
+	const float lambertCosine = Vector3::Dot(normalSample, -lightDirection);
+
+	const ColorRGB light = ColorRGB{ 1,1,1 } *( lightIntensity / lightDirection.Magnitude());
+	const ColorRGB color = m_pTextureBuffer->Sample(vertex.uv);
+
+	const float diffuse = 1.f / (float)M_PI;
+
+	if (lambertCosine <= 0)
+	{
+		return { 0,0,0 };
+	}
+
+	if (m_CurrentCycle == ShadingCycle::Diffuse)
+	{
+		return light * color * diffuse * lambertCosine;
+	}
+	else
+	{
+		return { lambertCosine, lambertCosine, lambertCosine };
+	}
+	
+
+	
+}
+
+void Renderer::ToggleShadingCycle()
+{
+	const auto shadingCycleIndex = static_cast<int8_t>(m_CurrentCycle);
+	const auto newShadingCycleIndex = (shadingCycleIndex + 1) % static_cast<int8_t>(ShadingCycle::ENUM_LENGTH);
+
+	m_CurrentCycle = static_cast<ShadingCycle>(newShadingCycleIndex);
+
+	switch (m_CurrentCycle)
+	{
+	case ShadingCycle::DepthMode:
+		std::cout << "Shading mode: Depth" << "\n";
+		break;
+	case ShadingCycle::ObservedArea:
+		std::cout << "Shading mode: Observed area" << "\n";
+		break;
+	case ShadingCycle::Diffuse:
+		std::cout << "Shading mode: Diffuse" << "\n";
+		break;
+	case ShadingCycle::Specular:
+		std::cout << "Shading mode: Specular" << "\n";
+		break;
+	case ShadingCycle::Combined:
+		std::cout << "Shading mode: Combined" << "\n";
+		break;
+	case ShadingCycle::ENUM_LENGTH:
+		throw std::runtime_error("Unknown mode, bug in code");
 	}
 }
 

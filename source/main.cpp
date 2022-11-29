@@ -28,8 +28,8 @@ int main(int argc, char* args[])
 	//Create window + surfaces
 	SDL_Init(SDL_INIT_VIDEO);
 
-	const uint32_t width = 1600; // 640 x 480 change later
-	const uint32_t height = 900;
+	const uint32_t width = 1920; // 640 x 480 change later
+	const uint32_t height = 1080;
 
 	SDL_Window* pWindow = SDL_CreateWindow(
 		"Rasterizer - Six Arne 2DAE08",
@@ -65,10 +65,21 @@ int main(int argc, char* args[])
 				{
 					takeScreenshot = true;
 				}
-				
-				if (e.key.keysym.scancode == SDL_SCANCODE_F2)
+				else if (e.key.keysym.scancode == SDL_SCANCODE_F2)
 				{
 					pRenderer->ToggleDisplayRenderDepthBuffer();
+				}
+				else if (e.key.keysym.scancode == SDL_SCANCODE_F5)
+				{
+					pRenderer->ToggleRotationOfModel();
+				}
+				else if (e.key.keysym.scancode == SDL_SCANCODE_F6)
+				{
+					pRenderer->ToggleNormalMap();
+				}
+				else if (e.key.keysym.scancode == SDL_SCANCODE_F7)
+				{
+					pRenderer->ToggleShadingCycle();
 				}
 
 				break;

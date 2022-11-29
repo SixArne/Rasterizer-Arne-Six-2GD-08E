@@ -32,22 +32,42 @@ namespace dae
 		void Render();
 		void RenderFrame();
 
-		void ToggleDisplayRenderDepthBuffer() { m_IsDisplayingDepthBuffer = !m_IsDisplayingDepthBuffer; };
+		void ToggleDisplayRenderDepthBuffer();
+		void ToggleRotationOfModel() { m_ShouldRotateModel = !m_ShouldRotateModel; };
+		void ToggleNormalMap() { m_ShouldDisplayNormalMap = !m_ShouldDisplayNormalMap; };
+		void ToggleShadingCycle();
 
 		bool SaveBufferToImage() const;
 
 	private:
+		enum class ShadingCycle
+		{
+			DepthMode,
+			ObservedArea,
+			Diffuse,
+			Specular,
+			Combined,
+			ENUM_LENGTH,
+		};
+
 		SDL_Window* m_pWindow{};
 
 		SDL_Surface* m_pFrontBuffer{ nullptr };
 		SDL_Surface* m_pBackBuffer{ nullptr };
 		Texture* m_pTextureBuffer{ nullptr };
+		Texture* m_pNormalBuffer{ nullptr };
 
 		uint32_t* m_pSurfacePixels{};
 		uint32_t* m_pBackBufferPixels{};
 
 		float* m_pDepthBufferPixels{};
+
+		// settings
 		bool m_IsDisplayingDepthBuffer{};
+		bool m_ShouldRotateModel{};
+		bool m_ShouldDisplayNormalMap{};
+		ShadingCycle m_CurrentCycle{ShadingCycle::Combined};
+		ShadingCycle m_LastCycle{ ShadingCycle::Combined };
 
 		Camera m_Camera{};
 
@@ -59,7 +79,7 @@ namespace dae
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
 		void VertexTransformationFunction(std::vector<Mesh>& meshes) const; //W2 version
-
 		void RenderTriangle(Vertex_Out v1, Vertex_Out v2, Vertex_Out v3);
+		ColorRGB ShadePixel(const Vertex_Out& vertex);
 	};
 }
