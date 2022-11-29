@@ -34,9 +34,9 @@ namespace dae
 
 	ColorRGB Texture::Sample(const Vector2& uv) const
 	{
-		const uint16_t pixelX = m_pSurface->w * uv.x;
-		const uint16_t pixelY = m_pSurface->h * uv.y;
-		const uint32_t pixelIndex = pixelY * m_pSurface->w + pixelX;
+		const int16_t pixelX = m_pSurface->w * uv.x;
+		const int16_t pixelY = m_pSurface->h * uv.y;
+		const int32_t pixelIndex = pixelY * m_pSurface->w + pixelX;
 
 		uint8_t r{}, g{}, b{};
 		SDL_GetRGB(m_pSurfacePixels[pixelIndex], m_pSurface->format, &r, &g, &b);

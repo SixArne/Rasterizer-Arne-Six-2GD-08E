@@ -396,7 +396,7 @@ ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
 	const float lightIntensity = 7.f;
 	const float shininess = 25.f;
 	const ColorRGB ambient = { .025f, .025f, .025f };
-	const ColorRGB light = ColorRGB{ 1,1,1 } *(lightIntensity / lightDirection.Magnitude());
+	const ColorRGB light = ColorRGB{ 1,1,1 } * lightIntensity;
 
 	// Visible areas with normal map taken into account
 	const float lambertCosine = Vector3::Dot(normalSample, -lightDirection);
@@ -409,7 +409,9 @@ ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
 	switch (m_CurrentCycle)
 	{
 	case ShadingCycle::ObservedArea:
-		return { lambertCosine, lambertCosine, lambertCosine };
+		{
+			 return { lambertCosine, lambertCosine, lambertCosine };
+		}
 		break;
 	case ShadingCycle::Diffuse:
 		{
@@ -420,14 +422,14 @@ ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
 	case ShadingCycle::Specular:
 		{
 			
-			const auto specularReflectance = specularColor * shininess;
+			const auto specularReflectance = specularColor;
 			const auto phongExponent = glossinessColor * shininess;
 
 			const ColorRGB specular = Shading::Phong(
 				specularReflectance, 
 				phongExponent, 
 				lightDirection, 
-				vertex.viewDirection, 
+				vertex.viewDirection,
 				vertex.normal
 			);
 
@@ -437,7 +439,7 @@ ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
 		break;
 	case ShadingCycle::Combined:
 		{
-			const auto specularReflectance = specularColor * shininess;
+			const auto specularReflectance = specularColor;
 			const auto phongExponent = glossinessColor * shininess;
 
 			const ColorRGB specular = Shading::Phong(
@@ -450,7 +452,7 @@ ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
 
 			const ColorRGB diffuse = Shading::Lambert(1.f, color);
 
-			return light * (diffuse + specular + ambient) * lambertCosine;
+			return light * (ambient + diffuse + specular) * lambertCosine;
 		}
 		
 		break;
