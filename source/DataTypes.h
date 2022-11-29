@@ -42,6 +42,11 @@ namespace dae
 		Matrix scaleMatrix{};
 		Matrix rotationMatrix{};
 
-		void SetRotationY(float yaw) { rotationMatrix = Matrix::CreateRotationY(yaw); };
+		float yawRotation{};
+		void AddRotationY(float yaw)
+		{
+			yawRotation += yaw;
+			rotationMatrix = Matrix::CreateRotationY(yawRotation);
+		};
 	};
 }

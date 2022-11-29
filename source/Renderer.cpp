@@ -12,6 +12,7 @@
 #include "Matrix.h"
 #include "Texture.h"
 #include "Utils.h"
+#include "Shading.h"
 #include <ppl.h>
 
 using namespace dae;
@@ -34,8 +35,13 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	//Create Buffers
 	m_pFrontBuffer = SDL_GetWindowSurface(pWindow);
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
-	m_pTextureBuffer = Texture::LoadFromFile("Resources/Vehicle_diffuse.png");
-	m_pNormalBuffer = Texture::LoadFromFile("Resources/Vehicle_normal.png");
+
+	// Texture maps
+	m_pTextureBuffer = Texture::LoadFromFile("Resources/vehicle_diffuse.png");
+	m_pNormalBuffer = Texture::LoadFromFile("Resources/vehicle_normal.png");
+	m_pSpecularBuffer = Texture::LoadFromFile("Resources/vehicle_specular.png");
+	m_pGlossinessBuffer = Texture::LoadFromFile("Resources/vehicle_gloss.png");
+
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 
 	m_pDepthBufferPixels = new float[m_Width * m_Height];
@@ -46,15 +52,16 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 
-	Utils::ParseOBJ("Resources/Vehicle.obj", vertices, indices);
+	Utils::ParseOBJ("Resources/vehicle.obj", vertices, indices);
 
 	Mesh mesh{};
 	mesh.vertices = vertices;
 	mesh.indices = indices;
 	mesh.primitiveTopology = PrimitiveTopology::TriangleList;
-	mesh.transformMatrix = Matrix::CreateTranslation({ 0,0,30 });
+	mesh.transformMatrix = Matrix::CreateTranslation({ 0,0,50 });
 	mesh.scaleMatrix = Matrix::CreateScale({ 1,1,1 });
-	mesh.rotationMatrix = Matrix::CreateRotationY(90 * TO_RADIANS);
+	mesh.yawRotation = 90.f * TO_RADIANS;
+	mesh.rotationMatrix = Matrix::CreateRotationY(mesh.yawRotation);
 	mesh.worldMatrix = mesh.scaleMatrix * mesh.rotationMatrix * mesh.transformMatrix;
 
 	m_Meshes.push_back(mesh);
@@ -65,6 +72,8 @@ Renderer::~Renderer()
 	delete[] m_pDepthBufferPixels;
 	delete m_pTextureBuffer;
 	delete m_pNormalBuffer;
+	delete m_pGlossinessBuffer;
+	delete m_pSpecularBuffer;
 }
 
 void Renderer::Update(Timer* pTimer)
@@ -75,7 +84,9 @@ void Renderer::Update(Timer* pTimer)
 	{
 		if (m_ShouldRotateModel)
 		{
-			mesh.SetRotationY((cos(pTimer->GetTotal()) + 1.f) / 2.f * PI_2);
+			// 1 deg per second
+			const float degreesPerSecond = 25.f;
+			mesh.AddRotationY((degreesPerSecond * pTimer->GetElapsed())* TO_RADIANS);
 		}
 	}
 }
@@ -196,11 +207,14 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 		// Loop over indices (every 3 indices is triangle)
 		for (const auto vertex : mesh.vertices)
 		{
-			// Transform world to view (camera space)
+			Vertex_Out rasterVertex{};
+
+			
 			auto position = Vector4{ vertex.position, 1 };
 
-			// Transform point
+			// Transform model to raster (screen space)
 			auto transformedVertex =  worldViewProjectionMatrix.TransformPoint(position);
+			rasterVertex.viewDirection = worldMatrix.TransformPoint(vertex.position) - m_Camera.origin;
 	
 			// perspective divide
 			transformedVertex.x /= transformedVertex.w;
@@ -212,7 +226,7 @@ void Renderer::VertexTransformationFunction(std::vector<Mesh>& meshes) const
 			transformedVertex.y = ((1 - transformedVertex.y) * (float)m_Height) / 2.f;
 
 			// Add vertex to vertices out and color
-			Vertex_Out rasterVertex{};
+	
 			rasterVertex.position = transformedVertex;
 			rasterVertex.color = vertex.color;
 			rasterVertex.uv = vertex.uv;
@@ -368,33 +382,81 @@ ColorRGB Renderer::ShadePixel(const Vertex_Out& vertex)
 	normalSample = tangentSpaceAxis.TransformPoint(normalSample);
 	normalSample.Normalize();
 
-	const Vector3 lightDirection = { .577f, -.577f, .577f };
-	const float lightIntensity = 7.f;
-	const float specular = 25.f;
-
-	const float lambertCosine = Vector3::Dot(normalSample, -lightDirection);
-
-	const ColorRGB light = ColorRGB{ 1,1,1 } *( lightIntensity / lightDirection.Magnitude());
+	// Sample color
 	const ColorRGB color = m_pTextureBuffer->Sample(vertex.uv);
 
-	const float diffuse = 1.f / (float)M_PI;
+	// Sample specular
+	const ColorRGB specularColor = m_pSpecularBuffer->Sample(vertex.uv);
+
+	// Sample glossiness
+	const ColorRGB glossinessColor = m_pGlossinessBuffer->Sample(vertex.uv);
+
+	// Lights
+	const Vector3 lightDirection = { .577f, -.577f, .577f };
+	const float lightIntensity = 7.f;
+	const float shininess = 25.f;
+	const ColorRGB ambient = { .025f, .025f, .025f };
+	const ColorRGB light = ColorRGB{ 1,1,1 } *(lightIntensity / lightDirection.Magnitude());
+
+	// Visible areas with normal map taken into account
+	const float lambertCosine = Vector3::Dot(normalSample, -lightDirection);
 
 	if (lambertCosine <= 0)
 	{
 		return { 0,0,0 };
 	}
 
-	if (m_CurrentCycle == ShadingCycle::Diffuse)
+	switch (m_CurrentCycle)
 	{
-		return light * color * diffuse * lambertCosine;
-	}
-	else
-	{
+	case ShadingCycle::ObservedArea:
 		return { lambertCosine, lambertCosine, lambertCosine };
-	}
-	
+		break;
+	case ShadingCycle::Diffuse:
+		{
+			const ColorRGB diffuse = Shading::Lambert(1.f, color);
+			return light * diffuse * lambertCosine;
+		}
+		break;
+	case ShadingCycle::Specular:
+		{
+			
+			const auto specularReflectance = specularColor * shininess;
+			const auto phongExponent = glossinessColor * shininess;
 
-	
+			const ColorRGB specular = Shading::Phong(
+				specularReflectance, 
+				phongExponent, 
+				lightDirection, 
+				vertex.viewDirection, 
+				vertex.normal
+			);
+
+			return light * specular * lambertCosine;
+		}
+		
+		break;
+	case ShadingCycle::Combined:
+		{
+			const auto specularReflectance = specularColor * shininess;
+			const auto phongExponent = glossinessColor * shininess;
+
+			const ColorRGB specular = Shading::Phong(
+				specularReflectance,
+				phongExponent,
+				lightDirection,
+				vertex.viewDirection,
+				vertex.normal
+			);
+
+			const ColorRGB diffuse = Shading::Lambert(1.f, color);
+
+			return light * (diffuse + specular + ambient) * lambertCosine;
+		}
+		
+		break;
+	case ShadingCycle::ENUM_LENGTH:
+		throw std::runtime_error("Unknown mode, bug in code");
+	}
 }
 
 void Renderer::ToggleShadingCycle()

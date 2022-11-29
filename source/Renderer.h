@@ -54,8 +54,12 @@ namespace dae
 
 		SDL_Surface* m_pFrontBuffer{ nullptr };
 		SDL_Surface* m_pBackBuffer{ nullptr };
+
+		// Textures
 		Texture* m_pTextureBuffer{ nullptr };
 		Texture* m_pNormalBuffer{ nullptr };
+		Texture* m_pSpecularBuffer{ nullptr };
+		Texture* m_pGlossinessBuffer{ nullptr };
 
 		uint32_t* m_pSurfacePixels{};
 		uint32_t* m_pBackBufferPixels{};
@@ -66,8 +70,8 @@ namespace dae
 		bool m_IsDisplayingDepthBuffer{};
 		bool m_ShouldRotateModel{};
 		bool m_ShouldDisplayNormalMap{};
-		ShadingCycle m_CurrentCycle{ShadingCycle::Combined};
-		ShadingCycle m_LastCycle{ ShadingCycle::Combined };
+		ShadingCycle m_CurrentCycle{ShadingCycle::Diffuse};
+		ShadingCycle m_LastCycle{ ShadingCycle::Diffuse };
 
 		Camera m_Camera{};
 

@@ -8,6 +8,9 @@
     <Filter Include="Misc">
       <UniqueIdentifier>{72056cb6-72a2-42b7-b05e-376f1ddd957e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shading">
+      <UniqueIdentifier>{0ac0035b-5b3d-4420-bb7d-7fb6e30702a9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Renderer.h" />
@@ -46,6 +49,9 @@
     </ClInclude>
     <ClInclude Include="Texture.h">
       <Filter>Misc</Filter>
+    </ClInclude>
+    <ClInclude Include="Shading.h">
+      <Filter>Shading</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
